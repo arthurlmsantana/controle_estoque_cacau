@@ -4,103 +4,193 @@ import plotly.express as px
 
 st.set_page_config(layout="wide")
 
+# ---------------------------
+# HEADER
+# ---------------------------
 st.title("📦 Dashboard de Estoque de Cacau")
-st.subheader(":necktie: Portifólio - Arthur Lima Machado de Santana")
-st.caption("Linkedin: https://www.linkedin.com/in/arthur-santana-68167994/?skipRedirect=true")
+st.subheader(":necktie: Portfólio - Arthur Lima Machado de Santana")
+st.caption("LinkedIn: https://www.linkedin.com/in/arthur-santana-68167994/")
 
-# Carregar dados
+# ---------------------------
+# LOAD DATA
+# ---------------------------
 df = pd.read_csv("estoque_cacau.csv")
 df["data"] = pd.to_datetime(df["data"])
 
-# 📊 Evolução do estoque
-st.subheader("📈 Evolução do Estoque ao Longo do Tempo")
+# ---------------------------
+# FILTROS
+# ---------------------------
+st.sidebar.header("Filtros")
 
-# filtro temporal
+# Datas
 min_data = df["data"].min().to_pydatetime()
 max_data = df["data"].max().to_pydatetime()
 
-periodo = st.slider(
-    "Selecione o período",
+periodo = st.sidebar.slider(
+    "📅 Período",
     min_value=min_data,
     max_value=max_data,
-    value=(min_data, max_data)
+    value=(min_data, max_data),
+    format="DD/MM/YYYY"
 )
 
 data_inicio, data_fim = periodo
-
-# garantir tipo correto
 data_inicio = pd.to_datetime(data_inicio)
 data_fim = pd.to_datetime(data_fim)
 
-
-# Sidebar filtros
-st.sidebar.header("Filtros")
-
+# Depósitos
 depositos = st.sidebar.multiselect(
-    "Selecione o(s) depósito(s)",
+    "🏭 Depósitos",
     options=df["deposito"].unique(),
     default=df["deposito"].unique()
 )
 
-# Aplicar filtros
+# ✅ SKU
+skus = st.sidebar.multiselect(
+    "🌱 Tipo de Cacau (SKU)",
+    options=df["sku"].unique(),
+    default=df["sku"].unique()
+)
+
+# ---------------------------
+# FILTRAR DADOS
+# ---------------------------
 df_filtrado = df[
     (df["deposito"].isin(depositos)) &
-    (df["data"] >= pd.to_datetime(data_inicio)) &
-    (df["data"] <= pd.to_datetime(data_fim))
+    (df["sku"].isin(skus)) &
+    (df["data"] >= data_inicio) &
+    (df["data"] <= data_fim)
 ]
 
-
+# ---------------------------
 # KPIs
-col1, col2, col3 = st.columns(3)
+# ---------------------------
+col1, col2, col3, col4 = st.columns(4)
 
-estoque_total = df_filtrado.groupby("data")["estoque"].sum().iloc[-1]
+# indicadores
 entrada_total = df_filtrado["entrada"].sum()
 saida_total = df_filtrado["saida"].sum()
+estoque_total = entrada_total - saida_total
+umidade_media = df_filtrado["umidade_entrada"].mean()
 
-col1.metric("Estoque Atual Total", f"{estoque_total:,.0f} sacas")
-col2.metric("Entradas no Período", f"{entrada_total:,.0f}")
-col3.metric("Saídas no Período", f"{saida_total:,.0f}")
+col1.metric("📦 Estoque Atual", f"{estoque_total:,.0f}")
+col2.metric("⬆️ Entradas", f"{entrada_total:,.0f}")
+col3.metric("⬇️ Saídas", f"{saida_total:,.0f}")
+col4.metric("🌡️ Umidade Média", f"{umidade_media:.2f}%")
+
+# ---------------------------
+# ABA PRINCIPAL
+# ---------------------------
+tab1, tab2, tab3 = st.tabs(["📈 Estoque", "🌱 Mix SKU", "🌡️ Qualidade"])
+
+# ---------------------------
+# TAB 1 - ESTOQUE
+# ---------------------------
+with tab1:
+    st.subheader("📈 Evolução do Estoque")
+
+    df_filtrado["movimento"] = df_filtrado["entrada"] - df_filtrado["saida"]
+
+    df_estoque = (
+    df_filtrado
+    .groupby(["deposito", "data"])["movimento"]
+    .sum()
+    .groupby(level=0)
+    .cumsum()
+    .reset_index(name="estoque_calculado")
+    )
+
+    fig = px.line(
+        df_estoque,
+        x="data",
+        y="estoque_calculado",
+        color="deposito",
+        title="Estoque por Depósito"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ---------------------------
+    # TABELA DETALHADA POR DIA E SKU
+    # ---------------------------
+    st.subheader("📊 Entradas e Saídas por Dia e Tipo de Cacau")
+
+    df_mov_dia = (
+        df_filtrado
+        .groupby(["data", "sku"])[["entrada", "saida"]]
+        .sum()
+        .reset_index()
+        .sort_values(by="data", ascending=False)
+    )
+
+    df_mov_dia["data_formatada"] = df_mov_dia["data"].dt.strftime("%d/%m/%Y")
+
+    
+    st.dataframe(
+        df_mov_dia[["data_formatada", "sku", "entrada", "saida"]],
+        use_container_width=True
+    )
 
 
+# ---------------------------
+# TAB 2 - SKU
+# ---------------------------
+with tab2:
+    st.subheader("🌱 Distribuição por Tipo de Cacau")
 
-df_estoque = df_filtrado.groupby(["data", "deposito"])["estoque"].mean().reset_index()
+    df_mix = df_filtrado.groupby("sku")["estoque"].sum().reset_index()
 
-fig = px.line(
-    df_estoque,
-    x="data",
-    y="estoque",
-    color="deposito",
-    title="Estoque por Depósito ao Longo do Tempo"
-)
+    fig2 = px.pie(
+        df_mix,
+        names="sku",
+        values="estoque",
+        title="Participação no Estoque",
+        hole = 0.4
+    )
 
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True)
 
-# 📦 Comparação entre depósitos
-st.subheader("🏭 Estoque Médio por Depósito")
+    # Evolução por SKU
+    df_sku = df_filtrado.groupby(["data", "sku"])["estoque"].sum().reset_index()
 
-df_media = df_filtrado.groupby("deposito")["estoque"].mean().reset_index()
+    fig3 = px.line(
+        df_sku,
+        x="data",
+        y="estoque",
+        color="sku",
+        title="Evolução por SKU"
+    )
 
-fig2 = px.bar(
-    df_media,
-    x="deposito",
-    y="estoque",
-    color="deposito",
-    title="Estoque Médio por Depósito"
-)
+    st.plotly_chart(fig3, use_container_width=True)
 
-st.plotly_chart(fig2, use_container_width=True)
+# ---------------------------
+# TAB 3 - QUALIDADE
+# ---------------------------
+with tab3:
+    st.subheader("🌡️ Análise de Umidade")
 
-# 🔄 Fluxo (entradas x saídas)
-st.subheader("🔄 Fluxo de Movimento")
+    # Boxplot (muito profissional)
+    fig4 = px.box(
+        df_filtrado,
+        x="sku",
+        y="umidade_entrada",
+        color="sku",
+        title="Distribuição de Umidade por SKU"
+    )
 
-df_fluxo = df_filtrado.groupby("data")[["entrada", "saida"]].sum().reset_index()
+    st.plotly_chart(fig4, use_container_width=True)
 
-fig3 = px.line(
-    df_fluxo,
-    x="data",
-    y=["entrada", "saida"],
-    title="Entradas vs Saídas ao Longo do Tempo"
-)
+    # Média de umidade
+    df_umidade = df_filtrado.groupby("sku")[["umidade_entrada"]].mean().reset_index()
 
-st.plotly_chart(fig3, use_container_width=True)
+    fig5 = px.bar(
+        df_umidade,
+        x="sku",
+        y="umidade_entrada",
+        color="sku",
+        title="Umidade Média por SKU"
+    )
+
+    st.plotly_chart(fig5, use_container_width=True)
+
 
