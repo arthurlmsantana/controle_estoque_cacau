@@ -9,7 +9,7 @@ st.subheader(":necktie: Portifólio - Arthur Lima Machado de Santana")
 st.caption("Linkedin: https://www.linkedin.com/in/arthur-santana-68167994/?skipRedirect=true")
 
 # Carregar dados
-df = pd.read_csv("data\estoque_cacau.csv")
+df = pd.read_csv("estoque_cacau.csv")
 df["data"] = pd.to_datetime(df["data"])
 
 # 📊 Evolução do estoque
